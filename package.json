@@ -1,16 +1,34 @@
 {
-  "name": "lobsterkit-vault",
-  "private": true,
-  "packageManager": "pnpm@9.15.4",
+  "name": "@lobsterkit/vault",
+  "version": "0.1.0",
+  "description": "Secret storage for AI agents. Store, retrieve, and rotate secrets with zero human touch.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
   "scripts": {
-    "build": "turbo build",
-    "typecheck": "turbo typecheck",
-    "test": "turbo test",
-    "lint": "turbo lint",
-    "clean": "turbo clean"
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "keywords": ["secrets", "vault", "agent", "ai", "encryption", "lobster", "lobsterkit"],
+  "author": "LobsterKit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lobster-kit/lobsterkit-vault"
   },
   "devDependencies": {
-    "turbo": "^2.8.10",
-    "typescript": "^5.7.3"
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
   }
 }
