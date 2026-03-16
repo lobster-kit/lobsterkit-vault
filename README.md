@@ -57,6 +57,10 @@ List version history. Builder tier required.
 | Pro | $29/mo | Unlimited | 20 | 90d |
 | Scale | $79/mo | Unlimited | Unlimited | 1yr |
 
+## LobsterKit Ecosystem
+
+`@lobsterkit/vault` is part of the LobsterKit ecosystem alongside [@lobsterkit/db](https://www.npmjs.com/package/@lobsterkit/db) and [@lobsterkit/lobstermail](https://www.npmjs.com/package/@lobsterkit/lobstermail). Link accounts across products at signup with a `linkToken` to get a single Stripe customer and an automatic 15% multi-product discount.
+
 ## License
 
 MIT
