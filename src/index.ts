@@ -35,6 +35,8 @@ export interface SetOptions {
   metadata?: Record<string, string>;
   /** Auto-expire this secret after N seconds */
   ttlSeconds?: number;
+  /** Absolute expiry time as an ISO 8601 date string. Mutually exclusive with ttlSeconds. */
+  expiresAt?: string;
 }
 
 export interface SecretSummary {
@@ -120,12 +122,14 @@ export class LobsterVault {
   /**
    * Retrieve and decrypt a secret value.
    *
-   * @param name  Secret name
-   * @returns     Decrypted value string, or null if not found
+   * @param name     Secret name
+   * @param options  Optional. Pass `{ version }` to retrieve a specific historical version (Builder+ tier).
+   * @returns        Decrypted value string, or null if not found
    */
-  async get(name: string): Promise<string | null> {
+  async get(name: string, options?: { version?: number }): Promise<string | null> {
     try {
-      const res: GetResponse = await this.fetch(`/v1/secrets/${encodeURIComponent(name)}`, {
+      const params = options?.version ? `?version=${options.version}` : '';
+      const res: GetResponse = await this.fetch(`/v1/secrets/${encodeURIComponent(name)}${params}`, {
         method: 'GET',
       });
       return res.value;
@@ -137,10 +141,14 @@ export class LobsterVault {
 
   /**
    * Retrieve a secret with full metadata.
+   *
+   * @param name     Secret name
+   * @param options  Optional. Pass `{ version }` to retrieve a specific historical version (Builder+ tier).
    */
-  async getWithMeta(name: string): Promise<GetResponse | null> {
+  async getWithMeta(name: string, options?: { version?: number }): Promise<GetResponse | null> {
     try {
-      return await this.fetch(`/v1/secrets/${encodeURIComponent(name)}`, { method: 'GET' });
+      const params = options?.version ? `?version=${options.version}` : '';
+      return await this.fetch(`/v1/secrets/${encodeURIComponent(name)}${params}`, { method: 'GET' });
     } catch (err) {
       if (err instanceof VaultError && err.status === 404) return null;
       throw err;
@@ -216,6 +224,80 @@ export class LobsterVault {
       method: 'GET',
     });
     return res.versions;
+  }
+
+  // ─── Sharing ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Create a time-limited share link for a secret. Builder+ tier required.
+   *
+   * @param name     Secret name to share
+   * @param options  Share options (expiry, scope, read limits)
+   * @returns        Share token and metadata
+   */
+  async share(
+    name: string,
+    options?: { scope?: string; expiresInSeconds?: number; expiresAt?: string; maxReads?: number },
+  ): Promise<{ shareId: string; shareToken: string; expiresAt: string }> {
+    return this.fetch(`/v1/secrets/${encodeURIComponent(name)}/share`, {
+      method: 'POST',
+      body: options ?? {},
+    });
+  }
+
+  /**
+   * List all active (non-revoked, non-expired) shares on the account. Builder+ tier required.
+   *
+   * @param secretName  Optional filter by secret name
+   */
+  async listShares(secretName?: string): Promise<{
+    shares: Array<{
+      shareId: string;
+      secretName: string;
+      scope: string | null;
+      createdAt: string;
+      expiresAt: string;
+      maxReads: number | null;
+      readCount: number;
+    }>;
+  }> {
+    const params = secretName ? `?secretName=${encodeURIComponent(secretName)}` : '';
+    return this.fetch(`/v1/shares${params}`, { method: 'GET' });
+  }
+
+  /**
+   * Revoke a share link. Builder+ tier required.
+   *
+   * @returns true if revoked, false if not found
+   */
+  async revokeShare(shareId: string): Promise<boolean> {
+    try {
+      await this.fetch(`/v1/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
+      return true;
+    } catch (err) {
+      if (err instanceof VaultError && err.status === 404) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * Retrieve a shared secret using a share token. No authentication required.
+   * The share must be non-expired, non-revoked, and within its read limit.
+   *
+   * @param shareToken  The share token from a share link
+   */
+  async getShared(shareToken: string): Promise<{
+    name: string;
+    value: string;
+    scope: string | null;
+    expiresAt: string;
+  } | null> {
+    try {
+      return await this.fetch(`/v1/shared/${encodeURIComponent(shareToken)}`, { method: 'GET' });
+    } catch (err) {
+      if (err instanceof VaultError && (err.status === 404 || err.status === 403)) return null;
+      throw err;
+    }
   }
 
   // ─── Account operations ──────────────────────────────────────────────────────
