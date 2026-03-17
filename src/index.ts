@@ -112,6 +112,10 @@ export class LobsterVault {
    * @param opts   Optional metadata and TTL
    */
   async set(name: string, value: string, opts?: SetOptions): Promise<{ version: number }> {
+    if (opts?.expiresAt !== undefined && opts?.ttlSeconds !== undefined) {
+      throw new Error('Cannot specify both expiresAt and ttlSeconds — they are mutually exclusive.');
+    }
+
     const res = await this.fetch(`/v1/secrets/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: { value, ...opts },
@@ -128,7 +132,7 @@ export class LobsterVault {
    */
   async get(name: string, options?: { version?: number }): Promise<string | null> {
     try {
-      const params = options?.version ? `?version=${options.version}` : '';
+      const params = options?.version !== undefined ? `?version=${options.version}` : '';
       const res: GetResponse = await this.fetch(`/v1/secrets/${encodeURIComponent(name)}${params}`, {
         method: 'GET',
       });
@@ -147,7 +151,7 @@ export class LobsterVault {
    */
   async getWithMeta(name: string, options?: { version?: number }): Promise<GetResponse | null> {
     try {
-      const params = options?.version ? `?version=${options.version}` : '';
+      const params = options?.version !== undefined ? `?version=${options.version}` : '';
       return await this.fetch(`/v1/secrets/${encodeURIComponent(name)}${params}`, { method: 'GET' });
     } catch (err) {
       if (err instanceof VaultError && err.status === 404) return null;
@@ -293,7 +297,7 @@ export class LobsterVault {
     expiresAt: string;
   } | null> {
     try {
-      return await this.fetch(`/v1/shared/${encodeURIComponent(shareToken)}`, { method: 'GET' });
+      return await this.fetchPublic(`/v1/shared/${encodeURIComponent(shareToken)}`, { method: 'GET' });
     } catch (err) {
       if (err instanceof VaultError && (err.status === 404 || err.status === 403)) return null;
       throw err;
@@ -316,6 +320,44 @@ export class LobsterVault {
   }
 
   // ─── HTTP helper ─────────────────────────────────────────────────────────────
+
+  /** Unauthenticated fetch for public endpoints (e.g. /v1/shared/*). */
+  private async fetchPublic(path: string, options: { method: string; body?: unknown }): Promise<any> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await globalThis.fetch(`${this.baseUrl}${path}`, {
+        method: options.method,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': '@lobsterkit/vault/0.1.0',
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new VaultError(
+          data.error ?? 'unknown_error',
+          response.status,
+          data.error ?? 'unknown_error',
+        );
+      }
+
+      return data;
+    } catch (err) {
+      if (err instanceof VaultError) throw err;
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new VaultError(`Request timed out after ${this.timeoutMs}ms`, 408, 'timeout');
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   private async fetch(path: string, options: { method: string; body?: unknown }): Promise<any> {
     const controller = new AbortController();
